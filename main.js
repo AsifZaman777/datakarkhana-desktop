@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
 const { spawn, execSync } = require("child_process");
 const http = require("http");
@@ -10,7 +10,9 @@ let frontendProcess = null;
 const BACKEND_PORT = 8000;
 const FRONTEND_PORT = 3000;
 const BACKEND_HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/api/health`;
-const FRONTEND_DEV_URL = process.env.FRONTEND_URL || `http://localhost:${FRONTEND_PORT}`;
+const FRONTEND_BASE_URL = (process.env.FRONTEND_URL || `http://localhost:${FRONTEND_PORT}`).replace(/\/$/, "");
+const FRONTEND_AUTH_URL = `${FRONTEND_BASE_URL}/auth`;
+const FRONTEND_DEV_URL = FRONTEND_AUTH_URL;
 
 // Disable hardware acceleration issues on older GPUs if needed
 app.commandLine.appendSwitch("disable-site-isolation-trials");
@@ -34,8 +36,8 @@ function checkBackendHealth() {
 
 function checkFrontendReady() {
   return new Promise((resolve) => {
-    const req = http.get(FRONTEND_DEV_URL, (res) => {
-      resolve(res.statusCode === 200);
+    const req = http.get(FRONTEND_BASE_URL, (res) => {
+      resolve(res.statusCode >= 200 && res.statusCode < 500);
     });
     req.on("error", () => resolve(false));
     req.setTimeout(2000, () => {
@@ -273,6 +275,37 @@ function createMainWindow() {
   });
 
   mainWindow.loadURL(FRONTEND_DEV_URL);
+
+  // Prevent desktop application from opening or showing the marketing landing website page ('/')
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsedUrl = new URL(url);
+      const baseUrlParsed = new URL(FRONTEND_BASE_URL);
+      if (parsedUrl.origin === baseUrlParsed.origin) {
+        if (parsedUrl.pathname === "/" || parsedUrl.pathname === "") {
+          event.preventDefault();
+          mainWindow.loadURL(FRONTEND_DEV_URL);
+        }
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+  });
+
+  // Open external links in user's default browser instead of inside Desktop Electron window
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const parsedUrl = new URL(url);
+      const baseUrlParsed = new URL(FRONTEND_BASE_URL);
+      if (parsedUrl.origin !== baseUrlParsed.origin) {
+        shell.openExternal(url);
+        return { action: "deny" };
+      }
+    } catch (e) {
+      // Ignore URL parsing errors
+    }
+    return { action: "allow" };
+  });
 
   mainWindow.once("ready-to-show", () => {
     if (splashWindow && !splashWindow.isDestroyed()) {
