@@ -1,0 +1,65 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Electron / Distribution & Build outputs
+dist/
+out/
+release/
+*.app/
+*.dmg
+*.exe
+*.zip
+*.deb
+*.rpm
+*.AppImage
+*.snap
+
+# NPM & Cache
+.npm/
+.npm-cache/
+.eslintcache
+.cache/
+*.tsbuildinfo
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Environment and Local Config
+.env
+.env.local
+.env.*.local
+*.env
+
+# Operating System Files
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# IDE & Editor Configs
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# Temporary & Test Coverage
+coverage/
+.nyc_output/
+temp/
+tmp/
