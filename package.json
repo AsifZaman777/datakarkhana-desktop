@@ -32,6 +32,13 @@
     "directories": {
       "output": "dist"
     },
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": ".",
+        "filter": ["**/*"]
+      }
+    ],
     "icon": "build/icon.png",
     "mac": {
       "icon": "build/icon.icns",

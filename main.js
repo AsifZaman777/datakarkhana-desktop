@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const { spawn, execSync } = require("child_process");
 const http = require("http");
+const { ensureBackendEnvironment } = require("./setup-dependencies");
 
 let mainWindow = null;
 let splashWindow = null;
@@ -123,19 +124,65 @@ function getBackendDir() {
   return path.resolve(__dirname, "..", "datakarkhana-backend");
 }
 
-function startPythonBackend() {
+async function startPythonBackend(onStatus) {
   killOrphanOnPort(BACKEND_PORT);
 
   const backendDir = getBackendDir();
-  const pyCmd = findPythonCommand();
+  const appDataDir = app.getPath("userData");
 
-  console.log(`[ELECTRON] Starting Python backend from ${backendDir} using ${pyCmd}...`);
+  let backendEnv;
+  try {
+    backendEnv = await ensureBackendEnvironment({ backendDir, appDataDir }, onStatus);
+  } catch (err) {
+    console.error("[ELECTRON] Failed to prepare backend environment:", err);
+    if (onStatus) onStatus(`Setup error: ${err.message}`);
+    dialog.showErrorBox(
+      "DataKarkhana Backend Setup Error",
+      `Could not initialize the standalone Python engine:\n\n${err.message}\n\nPlease check your internet connection or install Python 3.10+ manually.`
+    );
+    return false;
+  }
 
-  pythonProcess = spawn(pyCmd, ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)], {
-    cwd: backendDir,
-    env: { ...process.env, PYTHONUNBUFFERED: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-    windowsHide: true,
+  const isWin = process.platform === "win32";
+
+  try {
+    if (backendEnv.type === "binary") {
+      console.log(`[ELECTRON] Launching standalone backend binary: ${backendEnv.command}`);
+      pythonProcess = spawn(backendEnv.command, ["--port", String(BACKEND_PORT)], {
+        cwd: backendDir,
+        env: { ...process.env, PYTHONUNBUFFERED: "1" },
+        stdio: ["ignore", "pipe", "pipe"],
+        windowsHide: true,
+        shell: isWin,
+      });
+    } else {
+      console.log(`[ELECTRON] Starting Python backend from ${backendDir} using ${backendEnv.command}...`);
+      pythonProcess = spawn(
+        backendEnv.command,
+        ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)],
+        {
+          cwd: backendDir,
+          env: { ...process.env, PYTHONUNBUFFERED: "1" },
+          stdio: ["ignore", "pipe", "pipe"],
+          windowsHide: true,
+          shell: isWin,
+        }
+      );
+    }
+  } catch (err) {
+    console.error("[ELECTRON] Synchronous spawn error:", err);
+    dialog.showErrorBox("Backend Launch Error", `Failed to spawn backend process: ${err.message}`);
+    return false;
+  }
+
+  pythonProcess.on("error", (err) => {
+    console.error("[ELECTRON] Python backend process error:", err);
+    if (onStatus) onStatus(`Backend error: ${err.message}`);
+    dialog.showErrorBox(
+      "Backend Startup Failed",
+      `Python backend could not be started (${err.code || err.message}).\nCommand: ${backendEnv.command}\n\nPlease verify that security software has not blocked the Python executable.`
+    );
+    pythonProcess = null;
   });
 
   pythonProcess.stdout.on("data", (data) => {
@@ -150,6 +197,8 @@ function startPythonBackend() {
     console.log(`[ELECTRON] Python backend process exited with code ${code}`);
     pythonProcess = null;
   });
+
+  return true;
 }
 
 function startFrontendDevServer() {
@@ -158,12 +207,22 @@ function startFrontendDevServer() {
 
   console.log(`[ELECTRON] Starting Next.js frontend from ${frontendDir}...`);
 
-  frontendProcess = spawn(npmCmd, ["run", "dev"], {
-    cwd: frontendDir,
-    env: { ...process.env },
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: true,
-    windowsHide: true,
+  try {
+    frontendProcess = spawn(npmCmd, ["run", "dev"], {
+      cwd: frontendDir,
+      env: { ...process.env },
+      stdio: ["ignore", "pipe", "pipe"],
+      shell: true,
+      windowsHide: true,
+    });
+  } catch (err) {
+    console.error("[ELECTRON] Synchronous frontend spawn error:", err);
+    return;
+  }
+
+  frontendProcess.on("error", (err) => {
+    console.error("[ELECTRON] Frontend dev server process error:", err);
+    frontendProcess = null;
   });
 
   frontendProcess.stdout.on("data", (data) => {
@@ -378,12 +437,15 @@ async function initApp() {
   // ── Step 1: Start Python Backend ────────────────────────
   let isBackendHealthy = await checkBackendHealth();
   if (!isBackendHealthy) {
-    updateSplashStatus("Starting Python Backend Engine...");
-    startPythonBackend();
+    updateSplashStatus("Checking Python engine and dependencies...");
+    const started = await startPythonBackend((msg) => updateSplashStatus(msg));
+    if (started === false) {
+      return;
+    }
 
-    // Poll until healthy (up to 30 seconds)
+    // Poll until healthy (up to 45 seconds)
     const backendStart = Date.now();
-    while (Date.now() - backendStart < 30000) {
+    while (Date.now() - backendStart < 45000) {
       await new Promise((r) => setTimeout(r, 800));
       isBackendHealthy = await checkBackendHealth();
       if (isBackendHealthy) break;

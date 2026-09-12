@@ -9,11 +9,9 @@ echo "========================================================"
 echo "         DATAKARKHANA DESKTOP AUTOMATION ENGINE         "
 echo "========================================================"
 
-# Check Python 3
+# Check Python 3 (Electron will auto-download portable Python if missing)
 if ! command -v python3 &> /dev/null; then
-    echo "❌ Python 3 is required. Please install Python 3.10+ from python.org"
-    read -n 1 -s -r -p "Press any key to exit..."
-    exit 1
+    echo "ℹ️ Python 3 not detected in PATH. DataKarkhana Desktop will auto-configure a standalone Python engine."
 fi
 
 # Check Node / npm

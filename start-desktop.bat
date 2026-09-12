@@ -4,12 +4,14 @@ echo ========================================================
 echo          DATAKARKHANA DESKTOP AUTOMATION ENGINE         
 echo ========================================================
 
-:: Check python
+:: Check python (informative only - Electron will auto-initialize standalone Python if missing)
 python --version >nul 2>&1
 if %errorlevel% neq 0 (
-    echo Python is not detected in PATH. Please install Python 3.10+ from python.org
-    pause
-    exit /b 1
+    py --version >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo [INFO] Python not found in system PATH.
+        echo [INFO] DataKarkhana Desktop will automatically download and set up standalone Python runtime.
+    )
 )
 
 :: Check node/npm
