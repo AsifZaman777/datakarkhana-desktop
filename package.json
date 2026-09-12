@@ -1,6 +1,6 @@
 {
-  "name": "datakarkhana-desktop",
-  "version": "2.0.0",
+  "name": "datakarkhana",
+  "version": "2.0.1",
   "description": "DataKarkhana / MarketingOstad Desktop Application with Local Selenium Automation",
   "main": "main.js",
   "scripts": {
@@ -49,7 +49,9 @@
       {
         "from": "resources",
         "to": ".",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "icon": "build/icon.png",
