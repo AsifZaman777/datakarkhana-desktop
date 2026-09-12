@@ -12,7 +12,10 @@ let frontendProcess = null;
 const BACKEND_PORT = 8000;
 const FRONTEND_PORT = 3000;
 const BACKEND_HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/api/health`;
-const FRONTEND_BASE_URL = (process.env.FRONTEND_URL || `http://localhost:${FRONTEND_PORT}`).replace(/\/$/, "");
+const FRONTEND_BASE_URL = (
+  process.env.FRONTEND_URL ||
+  (app.isPackaged ? "https://datakarkhana-frontend.vercel.app" : `http://localhost:${FRONTEND_PORT}`)
+).replace(/\/$/, "");
 const FRONTEND_AUTH_URL = `${FRONTEND_BASE_URL}/auth`;
 const FRONTEND_DEV_URL = FRONTEND_AUTH_URL;
 
@@ -109,9 +112,9 @@ function killOrphanOnPort(port) {
 
 function getBackendDir() {
   const candidates = [
+    path.join(process.resourcesPath || "", "datakarkhana-backend"),
     path.resolve(__dirname, "..", "datakarkhana-backend"),
     path.resolve(process.resourcesPath || "", "..", "datakarkhana-backend"),
-    path.resolve(process.resourcesPath || "", "datakarkhana-backend"),
     path.resolve(app.getAppPath(), "..", "datakarkhana-backend"),
     path.resolve(process.cwd(), "datakarkhana-backend"),
     path.resolve(process.cwd(), "..", "datakarkhana-backend"),
@@ -453,24 +456,28 @@ async function initApp() {
   }
   updateSplashStatus("Backend ready ✓  Starting Frontend UI...");
 
-  // ── Step 2: Start Frontend Dev Server ───────────────────
-  let isFrontendReady = await checkFrontendReady();
-  if (!isFrontendReady) {
-    startFrontendDevServer();
+  // ── Step 2: Start Frontend Dev Server (Development Only) ───
+  if (!app.isPackaged) {
+    let isFrontendReady = await checkFrontendReady();
+    if (!isFrontendReady) {
+      startFrontendDevServer();
 
-    // Poll until frontend is ready (up to 60 seconds — Next.js can take a while on first compile)
-    const frontendStart = Date.now();
-    while (Date.now() - frontendStart < 60000) {
-      await new Promise((r) => setTimeout(r, 1000));
-      isFrontendReady = await checkFrontendReady();
-      if (isFrontendReady) {
-        updateSplashStatus("Frontend ready ✓  Launching app...");
-        break;
+      // Poll until frontend is ready (up to 60 seconds — Next.js can take a while on first compile)
+      const frontendStart = Date.now();
+      while (Date.now() - frontendStart < 60000) {
+        await new Promise((r) => setTimeout(r, 1000));
+        isFrontendReady = await checkFrontendReady();
+        if (isFrontendReady) {
+          updateSplashStatus("Frontend ready ✓  Launching app...");
+          break;
+        }
+        // Update splash with elapsed time
+        const elapsed = Math.round((Date.now() - frontendStart) / 1000);
+        updateSplashStatus(`Starting Frontend UI... (${elapsed}s)`);
       }
-      // Update splash with elapsed time
-      const elapsed = Math.round((Date.now() - frontendStart) / 1000);
-      updateSplashStatus(`Starting Frontend UI... (${elapsed}s)`);
     }
+  } else {
+    updateSplashStatus("Launching DataKarkhana Engine...");
   }
 
   // Small delay to ensure Next.js is fully hydrated

@@ -7,8 +7,14 @@ Set fso = CreateObject("Scripting.FileSystemObject")
 scriptDir = fso.GetParentFolderName(WScript.ScriptFullName)
 WshShell.CurrentDirectory = scriptDir
 
-' Run npm start / electron completely invisible (0 = SW_HIDE, False = don't wait)
-WshShell.Run "cmd /c npm start", 0, False
+' Check and run precompiled binary or local electron directly without requiring global npm
+If fso.FileExists(scriptDir & "\dist\win-unpacked\DataKarkhana Desktop.exe") Then
+    WshShell.Run """" & scriptDir & "\dist\win-unpacked\DataKarkhana Desktop.exe""", 1, False
+ElseIf fso.FileExists(scriptDir & "\node_modules\electron\dist\electron.exe") Then
+    WshShell.Run """" & scriptDir & "\node_modules\electron\dist\electron.exe"" """ & scriptDir & """", 1, False
+Else
+    WshShell.Run "cmd /c npm start", 0, False
+End If
 
 Set WshShell = Nothing
 Set fso = Nothing

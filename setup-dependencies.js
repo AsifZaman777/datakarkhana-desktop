@@ -232,10 +232,21 @@ function extractArchive(archivePath, targetDir) {
     fs.mkdirSync(targetDir, { recursive: true });
   }
 
-  // Windows 10/11, macOS, and Linux all provide built-in tar command
   const isWin = process.platform === "win32";
-  const cmd = `tar -xzf "${archivePath}" -C "${targetDir}"`;
-  execSync(cmd, { stdio: "ignore", shell: isWin });
+  try {
+    const cmd = `tar -xzf "${archivePath}" -C "${targetDir}"`;
+    execSync(cmd, { stdio: "ignore", shell: isWin });
+  } catch (err) {
+    if (isWin) {
+      // Fallback for Windows if system tar isn't in default PATH
+      const sysTar = "C:\\Windows\\System32\\tar.exe";
+      if (fs.existsSync(sysTar)) {
+        execSync(`"${sysTar}" -xzf "${archivePath}" -C "${targetDir}"`, { stdio: "ignore", shell: true });
+        return;
+      }
+    }
+    throw new Error(`Failed to extract Python runtime archive: ${err.message}`);
+  }
 }
 
 /**

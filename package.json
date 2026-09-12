@@ -34,6 +34,19 @@
     },
     "extraResources": [
       {
+        "from": "../datakarkhana-backend",
+        "to": "datakarkhana-backend",
+        "filter": [
+          "**/*",
+          "!**/.git/**",
+          "!**/__pycache__/**",
+          "!**/scrape_results/**",
+          "!**/uploads/**",
+          "!**/logs/**",
+          "!**/.env.example"
+        ]
+      },
+      {
         "from": "resources",
         "to": ".",
         "filter": ["**/*"]
