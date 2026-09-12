@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const path = require("path");
+const fs = require("fs");
 const { spawn, execSync } = require("child_process");
 const http = require("http");
 
@@ -20,11 +21,19 @@ app.commandLine.appendSwitch("disable-site-isolation-trials");
 function checkBackendHealth() {
   return new Promise((resolve) => {
     const req = http.get(BACKEND_HEALTH_URL, (res) => {
-      if (res.statusCode === 200) {
-        resolve(true);
-      } else {
-        resolve(false);
+      if (res.statusCode !== 200) {
+        return resolve(false);
       }
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(body);
+          resolve(json.status === "healthy" && (!json.database || json.database === "ok"));
+        } catch {
+          resolve(true);
+        }
+      });
     });
     req.on("error", () => resolve(false));
     req.setTimeout(1500, () => {
@@ -73,8 +82,51 @@ function findNpmCommand() {
   return "npm";
 }
 
+function killOrphanOnPort(port) {
+  try {
+    if (process.platform === "win32") {
+      const out = execSync(`netstat -ano | findstr :${port}`).toString();
+      const lines = out.trim().split("\n");
+      for (const line of lines) {
+        const parts = line.trim().split(/\s+/);
+        const pid = parts[parts.length - 1];
+        if (pid && !isNaN(pid)) {
+          execSync(`taskkill /pid ${pid} /F`);
+        }
+      }
+    } else {
+      const out = execSync(`lsof -t -i :${port}`).toString().trim();
+      if (out) {
+        const pids = out.split("\n").join(" ");
+        execSync(`kill -9 ${pids}`);
+      }
+    }
+  } catch {
+    // Port is free or kill completed
+  }
+}
+
+function getBackendDir() {
+  const candidates = [
+    path.resolve(__dirname, "..", "datakarkhana-backend"),
+    path.resolve(process.resourcesPath || "", "..", "datakarkhana-backend"),
+    path.resolve(process.resourcesPath || "", "datakarkhana-backend"),
+    path.resolve(app.getAppPath(), "..", "datakarkhana-backend"),
+    path.resolve(process.cwd(), "datakarkhana-backend"),
+    path.resolve(process.cwd(), "..", "datakarkhana-backend"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "main.py"))) {
+      return dir;
+    }
+  }
+  return path.resolve(__dirname, "..", "datakarkhana-backend");
+}
+
 function startPythonBackend() {
-  const backendDir = path.resolve(__dirname, "..", "datakarkhana-backend");
+  killOrphanOnPort(BACKEND_PORT);
+
+  const backendDir = getBackendDir();
   const pyCmd = findPythonCommand();
 
   console.log(`[ELECTRON] Starting Python backend from ${backendDir} using ${pyCmd}...`);
