@@ -32,6 +32,16 @@
     "directories": {
       "output": "dist"
     },
+    "files": [
+      "main.js",
+      "preload.js",
+      "setup-dependencies.js",
+      "package.json",
+      "icon.*",
+      "build/**/*",
+      "!dist/**",
+      "!**/.git/**"
+    ],
     "extraResources": [
       {
         "from": "../datakarkhana-backend",
