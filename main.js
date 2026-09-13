@@ -130,7 +130,17 @@ function getBackendDir() {
   return path.resolve(__dirname, "..", "datakarkhana-backend");
 }
 
+let lastBackendStderrLines = [];
+
 async function startPythonBackend(onStatus) {
+  // Check if backend is already running and healthy
+  const alreadyHealthy = await checkBackendHealth();
+  if (alreadyHealthy) {
+    console.log(`[ELECTRON] Backend is already running and healthy on port ${BACKEND_PORT}`);
+    if (onStatus) onStatus("Local backend engine active ✓", 100);
+    return true;
+  }
+
   killOrphanOnPort(BACKEND_PORT);
 
   const backendDir = getBackendDir();
@@ -149,32 +159,30 @@ async function startPythonBackend(onStatus) {
     return false;
   }
 
-  const isWin = process.platform === "win32";
+  lastBackendStderrLines = [];
+  const logFile = path.join(appDataDir, "backend.log");
+  let logStream = null;
+  try {
+    logStream = fs.createWriteStream(logFile, { flags: "a" });
+  } catch {
+    // Ignore log stream error
+  }
+
+  const isBinary = backendEnv.type === "binary";
+  const spawnCmd = backendEnv.command;
+  const spawnArgs = isBinary
+    ? ["--port", String(BACKEND_PORT)]
+    : ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)];
 
   try {
-    if (backendEnv.type === "binary") {
-      console.log(`[ELECTRON] Launching standalone backend binary: ${backendEnv.command}`);
-      pythonProcess = spawn(backendEnv.command, ["--port", String(BACKEND_PORT)], {
-        cwd: backendDir,
-        env: { ...process.env, PYTHONUNBUFFERED: "1" },
-        stdio: ["ignore", "pipe", "pipe"],
-        windowsHide: true,
-        shell: isWin,
-      });
-    } else {
-      console.log(`[ELECTRON] Starting Python backend from ${backendDir} using ${backendEnv.command}...`);
-      pythonProcess = spawn(
-        backendEnv.command,
-        ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)],
-        {
-          cwd: backendDir,
-          env: { ...process.env, PYTHONUNBUFFERED: "1" },
-          stdio: ["ignore", "pipe", "pipe"],
-          windowsHide: true,
-          shell: isWin,
-        }
-      );
-    }
+    console.log(`[ELECTRON] Launching backend: ${spawnCmd} ${spawnArgs.join(" ")} (cwd: ${backendDir})`);
+    pythonProcess = spawn(spawnCmd, spawnArgs, {
+      cwd: backendDir,
+      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
+      shell: false, // CRITICAL: false prevents Windows cmd.exe from breaking paths with spaces
+    });
   } catch (err) {
     console.error("[ELECTRON] Synchronous spawn error:", err);
     dialog.showErrorBox("Backend Launch Error", `Failed to spawn backend process: ${err.message}`);
@@ -192,15 +200,24 @@ async function startPythonBackend(onStatus) {
   });
 
   pythonProcess.stdout.on("data", (data) => {
-    console.log(`[BACKEND STDOUT] ${data.toString().trim()}`);
+    const text = data.toString();
+    console.log(`[BACKEND STDOUT] ${text.trim()}`);
+    if (logStream) logStream.write(text);
   });
 
   pythonProcess.stderr.on("data", (data) => {
-    console.error(`[BACKEND STDERR] ${data.toString().trim()}`);
+    const text = data.toString();
+    console.error(`[BACKEND STDERR] ${text.trim()}`);
+    if (logStream) logStream.write(text);
+    lastBackendStderrLines.push(text.trim());
+    if (lastBackendStderrLines.length > 20) lastBackendStderrLines.shift();
   });
 
   pythonProcess.on("close", (code) => {
     console.log(`[ELECTRON] Python backend process exited with code ${code}`);
+    if (code !== 0 && code !== null) {
+      console.error("[ELECTRON] Last backend error messages:", lastBackendStderrLines.join("\n"));
+    }
     pythonProcess = null;
   });
 
@@ -456,9 +473,11 @@ async function initApp() {
       await new Promise((r) => setTimeout(r, 800));
       isBackendHealthy = await checkBackendHealth();
       if (isBackendHealthy) break;
+      const elapsed = Math.round((Date.now() - backendStart) / 1000);
+      updateSplashStatus(`Starting local backend engine... (${elapsed}s)`);
     }
   }
-  updateSplashStatus("Backend ready ✓  Starting Frontend UI...");
+  updateSplashStatus("Backend ready ✓  Launching application...");
 
   // ── Step 2: Start Frontend Dev Server (Development Only) ───
   if (!app.isPackaged) {
@@ -529,6 +548,13 @@ ipcMain.handle("backend:status", async () => {
       resolve({ healthy: false, backend: false, database: false, port: BACKEND_PORT, error: "timeout" });
     });
   });
+});
+
+ipcMain.handle("backend:restart", async () => {
+  console.log("[ELECTRON] Manual backend restart triggered");
+  killOrphanOnPort(BACKEND_PORT);
+  const started = await startPythonBackend();
+  return { success: started };
 });
 
 ipcMain.handle("license:status", async () => {
