@@ -19,8 +19,11 @@ const FRONTEND_BASE_URL = (
 const FRONTEND_AUTH_URL = `${FRONTEND_BASE_URL}/auth`;
 const FRONTEND_DEV_URL = FRONTEND_AUTH_URL;
 
-// Disable hardware acceleration issues on older GPUs if needed
+// Disable hardware acceleration issues & allow communication with local 127.0.0.1 backend
 app.commandLine.appendSwitch("disable-site-isolation-trials");
+app.commandLine.appendSwitch("allow-running-insecure-content");
+app.commandLine.appendSwitch("disable-features", "BlockInsecurePrivateNetworkRequests");
+app.commandLine.appendSwitch("disable-web-security");
 
 function checkBackendHealth() {
   return new Promise((resolve) => {
@@ -384,7 +387,8 @@ function createMainWindow() {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: true,
+      webSecurity: false,
+      allowRunningInsecureContent: true,
     },
   });
 
@@ -491,8 +495,40 @@ async function initApp() {
 ipcMain.handle("app:version", () => app.getVersion());
 
 ipcMain.handle("backend:status", async () => {
-  const healthy = await checkBackendHealth();
-  return { healthy, port: BACKEND_PORT };
+  return new Promise((resolve) => {
+    const req = http.get(BACKEND_HEALTH_URL, (res) => {
+      let body = "";
+      res.on("data", (chunk) => (body += chunk));
+      res.on("end", () => {
+        try {
+          const json = JSON.parse(body);
+          const isHealthy = res.statusCode === 200 && json.status === "healthy";
+          const isDbOk = json.database === "ok" || (!json.database && isHealthy);
+          resolve({
+            healthy: isHealthy && isDbOk,
+            backend: res.statusCode === 200,
+            database: isDbOk,
+            port: BACKEND_PORT,
+            details: json,
+          });
+        } catch {
+          resolve({
+            healthy: res.statusCode === 200,
+            backend: res.statusCode === 200,
+            database: false,
+            port: BACKEND_PORT,
+          });
+        }
+      });
+    });
+    req.on("error", (err) => {
+      resolve({ healthy: false, backend: false, database: false, port: BACKEND_PORT, error: err.message });
+    });
+    req.setTimeout(2500, () => {
+      req.destroy();
+      resolve({ healthy: false, backend: false, database: false, port: BACKEND_PORT, error: "timeout" });
+    });
+  });
 });
 
 ipcMain.handle("license:status", async () => {
