@@ -178,7 +178,7 @@ async function startPythonBackend(onStatus) {
     console.log(`[ELECTRON] Launching backend: ${spawnCmd} ${spawnArgs.join(" ")} (cwd: ${backendDir})`);
     pythonProcess = spawn(spawnCmd, spawnArgs, {
       cwd: backendDir,
-      env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      env: { ...process.env, PYTHONUNBUFFERED: "1", DATAKARKHANA_DATA_DIR: appDataDir },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
       shell: false, // CRITICAL: false prevents Windows cmd.exe from breaking paths with spaces
