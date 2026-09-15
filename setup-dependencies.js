@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const https = require("https");
-const { execSync } = require("child_process");
+const { execSync, execFileSync } = require("child_process");
 
 // URLs for official standalone portable Python distributions (astral-sh / python-build-standalone)
 const PYTHON_STANDALONE_RELEASE = "20241016";
@@ -86,8 +86,7 @@ function getPortablePythonExe(appDataDir) {
  */
 function testPythonExecutable(cmd) {
   try {
-    const isWin = process.platform === "win32";
-    execSync(`"${cmd}" --version`, { stdio: "ignore", shell: isWin });
+    execFileSync(cmd, ["--version"], { stdio: "ignore" });
     return true;
   } catch {
     return false;
@@ -294,11 +293,9 @@ async function downloadPortablePython(appDataDir, onStatus) {
  */
 function verifyBackendPackages(pythonCmd, backendDir) {
   try {
-    const isWin = process.platform === "win32";
-    execSync(`"${pythonCmd}" -c "import uvicorn; import fastapi; import selenium"`, {
+    execFileSync(pythonCmd, ["-c", "import uvicorn; import fastapi; import selenium"], {
       stdio: "ignore",
       cwd: backendDir,
-      shell: isWin,
     });
     return true;
   } catch {
@@ -317,15 +314,11 @@ function installBackendRequirements(pythonCmd, backendDir, onStatus) {
 
   if (onStatus) onStatus("Installing required backend dependencies (FastAPI, Selenium)...", 50);
 
-  const isWin = process.platform === "win32";
-  const cmd = `"${pythonCmd}" -m pip install -r "${reqFile}" --quiet --no-warn-script-location`;
-
   try {
-    execSync(cmd, {
+    execFileSync(pythonCmd, ["-m", "pip", "install", "-r", reqFile, "--quiet", "--no-warn-script-location"], {
       cwd: backendDir,
       stdio: "ignore",
-      shell: isWin,
-      timeout: 180000, // 3 minutes max
+      timeout: 180000,
     });
   } catch (err) {
     console.warn("[DEPENDENCIES] Warning: pip install returned non-zero, continuing to attempt backend launch...", err);
@@ -337,6 +330,20 @@ function installBackendRequirements(pythonCmd, backendDir, onStatus) {
  */
 async function ensureBackendEnvironment(options, onStatus) {
   const { backendDir, appDataDir } = options;
+
+  // Ensure .env exists in backendDir from .env.example or local environment without baking secrets
+  if (backendDir) {
+    const envPath = path.join(backendDir, ".env");
+    const examplePath = path.join(backendDir, ".env.example");
+    if (!fs.existsSync(envPath) && fs.existsSync(examplePath)) {
+      try {
+        fs.copyFileSync(examplePath, envPath);
+        console.log(`[DEPENDENCIES] Initialized backend .env from template at ${envPath}`);
+      } catch (e) {
+        console.warn("[DEPENDENCIES] Could not copy .env template:", e);
+      }
+    }
+  }
 
   // Step 1: Check for pre-compiled standalone binary
   const standaloneBinary = findStandaloneBackendBinary(backendDir);
