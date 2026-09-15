@@ -267,8 +267,8 @@ function createSplashWindow() {
   const appIcon = path.join(__dirname, "icon.png");
 
   splashWindow = new BrowserWindow({
-    width: 480,
-    height: 320,
+    width: 460,
+    height: 420,
     frame: false,
     resizable: false,
     alwaysOnTop: true,
@@ -287,8 +287,8 @@ function createSplashWindow() {
     <head>
       <meta charset="utf-8">
       <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
-          margin: 0;
           font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
           background: #070b14;
           color: #f8fafc;
@@ -298,81 +298,226 @@ function createSplashWindow() {
           justify-content: center;
           height: 100vh;
           border-radius: 16px;
-          border: 1px solid rgba(255, 255, 255, 0.1);
-          box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+          border: 1px solid rgba(255,255,255,0.08);
+          box-shadow: 0 24px 48px rgba(0,0,0,0.7);
           overflow: hidden;
           user-select: none;
+          padding: 32px 36px;
+          gap: 0;
         }
         .logo-box {
-          width: 64px;
-          height: 64px;
+          width: 56px;
+          height: 56px;
           background: linear-gradient(135deg, #06b6d4, #3b82f6);
-          border-radius: 16px;
+          border-radius: 14px;
           display: flex;
           align-items: center;
           justify-content: center;
-          box-shadow: 0 0 24px rgba(6, 182, 212, 0.4);
-          margin-bottom: 20px;
+          box-shadow: 0 0 28px rgba(6,182,212,0.45);
+          margin-bottom: 14px;
         }
-        .logo-box svg {
-          width: 36px;
-          height: 36px;
-          fill: #ffffff;
-        }
+        .logo-box svg { width: 30px; height: 30px; fill: #fff; }
         h1 {
-          margin: 0;
-          font-size: 20px;
+          font-size: 17px;
           font-weight: 800;
-          letter-spacing: 0.5px;
+          letter-spacing: 0.6px;
+          color: #f8fafc;
         }
         .subtitle {
-          font-size: 11px;
-          color: #94a3b8;
-          margin-top: 4px;
+          font-size: 10px;
+          color: #64748b;
+          margin-top: 3px;
           letter-spacing: 0.3px;
         }
-        .status-text {
-          font-size: 11px;
-          color: #38bdf8;
-          margin-top: 24px;
+        /* ── Checklist ── */
+        .checklist {
+          width: 100%;
+          margin-top: 22px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .step {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          padding: 10px 14px;
+          border-radius: 10px;
+          background: rgba(255,255,255,0.035);
+          border: 1px solid rgba(255,255,255,0.06);
+          transition: background 0.3s, border-color 0.3s;
+        }
+        .step.active {
+          background: rgba(6,182,212,0.08);
+          border-color: rgba(6,182,212,0.25);
+        }
+        .step.done {
+          background: rgba(16,185,129,0.07);
+          border-color: rgba(16,185,129,0.2);
+        }
+        .step.error {
+          background: rgba(239,68,68,0.07);
+          border-color: rgba(239,68,68,0.25);
+        }
+        .icon {
+          width: 24px;
+          height: 24px;
+          border-radius: 50%;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          flex-shrink: 0;
+          font-size: 13px;
+          transition: background 0.3s;
+        }
+        .icon-pending  { background: rgba(255,255,255,0.06); }
+        .icon-active   { background: rgba(6,182,212,0.18); }
+        .icon-done     { background: rgba(16,185,129,0.2); }
+        .icon-error    { background: rgba(239,68,68,0.2); }
+        /* Spinner ring */
+        .spinner {
+          width: 14px; height: 14px;
+          border: 2px solid rgba(6,182,212,0.25);
+          border-top-color: #06b6d4;
+          border-radius: 50%;
+          animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        /* Dot for pending */
+        .dot {
+          width: 7px; height: 7px;
+          border-radius: 50%;
+          background: #334155;
+        }
+        /* Check mark */
+        .checkmark { color: #10b981; font-size: 14px; line-height: 1; }
+        /* Cross mark */
+        .crossmark { color: #ef4444; font-size: 14px; line-height: 1; }
+        .step-info { flex: 1; min-width: 0; }
+        .step-label {
+          font-size: 11.5px;
+          font-weight: 600;
+          color: #cbd5e1;
+          transition: color 0.3s;
+        }
+        .step.active .step-label { color: #e2e8f0; }
+        .step.done   .step-label { color: #86efac; }
+        .step.error  .step-label { color: #fca5a5; }
+        .step-detail {
+          font-size: 10px;
+          color: #475569;
+          margin-top: 2px;
           font-family: monospace;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          transition: color 0.3s;
+        }
+        .step.active .step-detail { color: #38bdf8; }
+        .step.done   .step-detail { color: #4ade80; }
+        .step.error  .step-detail { color: #f87171; }
+        /* Bottom bar */
+        .bottom {
+          margin-top: 20px;
+          width: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
         }
         .loader-bar {
-          width: 200px;
-          height: 3px;
-          background: rgba(255, 255, 255, 0.1);
+          width: 100%;
+          height: 2px;
+          background: rgba(255,255,255,0.07);
           border-radius: 999px;
-          margin-top: 12px;
           overflow: hidden;
           position: relative;
         }
         .loader-bar::after {
           content: '';
           position: absolute;
-          top: 0;
-          left: 0;
+          top: 0; left: 0;
           height: 100%;
-          width: 40%;
+          width: 35%;
           background: linear-gradient(90deg, #06b6d4, #3b82f6);
           border-radius: 999px;
-          animation: slide 1.2s infinite ease-in-out;
+          animation: slide 1.1s infinite ease-in-out;
         }
-        @keyframes slide {
-          0% { left: -40%; }
-          100% { left: 100%; }
+        @keyframes slide { 0% { left: -35%; } 100% { left: 100%; } }
+        .status-text {
+          font-size: 10px;
+          color: #38bdf8;
+          font-family: monospace;
+          text-align: center;
         }
       </style>
     </head>
     <body>
       <div class="logo-box">
-        <svg viewBox="0 0 24 24">
-          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-        </svg>
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
       </div>
       <h1>DATAKARKHANA DESKTOP</h1>
-      <div class="subtitle">Local Automation & Lead Generation Engine</div>
-      <div class="status-text" id="status">Initializing Python Engine...</div>
-      <div class="loader-bar"></div>
+      <div class="subtitle">Local Automation &amp; Lead Generation Engine</div>
+
+      <div class="checklist">
+        <div class="step" id="step-python">
+          <div class="icon icon-pending" id="step-python-icon"><div class="dot"></div></div>
+          <div class="step-info">
+            <div class="step-label">Python Engine Setup</div>
+            <div class="step-detail" id="step-python-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="step" id="step-backend">
+          <div class="icon icon-pending" id="step-backend-icon"><div class="dot"></div></div>
+          <div class="step-info">
+            <div class="step-label">Local Backend Server</div>
+            <div class="step-detail" id="step-backend-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="step" id="step-frontend">
+          <div class="icon icon-pending" id="step-frontend-icon"><div class="dot"></div></div>
+          <div class="step-info">
+            <div class="step-label">Frontend UI</div>
+            <div class="step-detail" id="step-frontend-detail">Waiting...</div>
+          </div>
+        </div>
+        <div class="step" id="step-launch">
+          <div class="icon icon-pending" id="step-launch-icon"><div class="dot"></div></div>
+          <div class="step-info">
+            <div class="step-label">Launching Application</div>
+            <div class="step-detail" id="step-launch-detail">Waiting...</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="loader-bar"></div>
+        <div class="status-text" id="status">Starting up...</div>
+      </div>
+
+      <script>
+        function setStep(id, state, detail) {
+          const row  = document.getElementById('step-' + id);
+          const icon = document.getElementById('step-' + id + '-icon');
+          const det  = document.getElementById('step-' + id + '-detail');
+          if (!row) return;
+          row.className = 'step ' + state;
+          if (detail !== undefined && det) det.textContent = detail;
+          if (state === 'active') {
+            icon.className = 'icon icon-active';
+            icon.innerHTML = '<div class="spinner"></div>';
+          } else if (state === 'done') {
+            icon.className = 'icon icon-done';
+            icon.innerHTML = '<span class="checkmark">✓</span>';
+          } else if (state === 'error') {
+            icon.className = 'icon icon-error';
+            icon.innerHTML = '<span class="crossmark">✕</span>';
+          } else {
+            icon.className = 'icon icon-pending';
+            icon.innerHTML = '<div class="dot"></div>';
+          }
+        }
+      </script>
     </body>
     </html>
   `;
@@ -385,6 +530,19 @@ function updateSplashStatus(text) {
     splashWindow.webContents.executeJavaScript(
       `document.getElementById('status').textContent = ${JSON.stringify(text)};`
     ).catch(() => {});
+  }
+}
+
+/**
+ * Update a named checklist step on the splash screen.
+ * @param {string} stepId   - One of: 'python' | 'backend' | 'frontend' | 'launch'
+ * @param {'pending'|'active'|'done'|'error'} state
+ * @param {string} [detail] - Short status text shown under the label
+ */
+function updateSplashStep(stepId, state, detail) {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    const js = `typeof setStep === 'function' && setStep(${JSON.stringify(stepId)}, ${JSON.stringify(state)}, ${JSON.stringify(detail ?? null)});`;
+    splashWindow.webContents.executeJavaScript(js).catch(() => {});
   }
 }
 
@@ -458,53 +616,91 @@ function createMainWindow() {
 async function initApp() {
   createSplashWindow();
 
-  // ── Step 1: Start Python Backend ────────────────────────
+  // Give the splash window a moment to fully render before we start updating it
+  await new Promise((r) => setTimeout(r, 350));
+
+  // ── Step 1: Python Engine Setup ─────────────────────────
+  updateSplashStep("python", "active", "Checking Python & dependencies...");
+  updateSplashStatus("Checking Python engine and dependencies...");
+
   let isBackendHealthy = await checkBackendHealth();
   if (!isBackendHealthy) {
-    updateSplashStatus("Checking Python engine and dependencies...");
-    const started = await startPythonBackend((msg) => updateSplashStatus(msg));
+    const started = await startPythonBackend((msg) => {
+      updateSplashStatus(msg);
+      updateSplashStep("python", "active", msg);
+    });
     if (started === false) {
+      updateSplashStep("python", "error", "Failed to start Python engine");
       return;
     }
+    updateSplashStep("python", "done", "Python engine ready");
 
-    // Poll until healthy (up to 45 seconds)
+    // ── Step 2: Wait for backend to become healthy ────────
+    updateSplashStep("backend", "active", "Starting local API server...");
+    updateSplashStatus("Starting local backend server...");
+
     const backendStart = Date.now();
     while (Date.now() - backendStart < 45000) {
       await new Promise((r) => setTimeout(r, 800));
       isBackendHealthy = await checkBackendHealth();
       if (isBackendHealthy) break;
       const elapsed = Math.round((Date.now() - backendStart) / 1000);
+      updateSplashStep("backend", "active", `Waiting for API server... (${elapsed}s)`);
       updateSplashStatus(`Starting local backend engine... (${elapsed}s)`);
     }
+
+    if (isBackendHealthy) {
+      updateSplashStep("backend", "done", "API server is healthy ✓");
+    } else {
+      updateSplashStep("backend", "error", "Backend did not respond in time");
+    }
+  } else {
+    // Backend was already running
+    updateSplashStep("python", "done", "Python engine already running");
+    updateSplashStep("backend", "done", "API server already healthy ✓");
   }
+
   updateSplashStatus("Backend ready ✓  Launching application...");
 
-  // ── Step 2: Start Frontend Dev Server (Development Only) ───
+  // ── Step 3: Frontend UI ───────────────────────────────
   if (!app.isPackaged) {
+    updateSplashStep("frontend", "active", "Checking Next.js dev server...");
     let isFrontendReady = await checkFrontendReady();
     if (!isFrontendReady) {
       startFrontendDevServer();
+      updateSplashStep("frontend", "active", "Compiling frontend UI...");
+      updateSplashStatus("Starting Frontend UI...");
 
-      // Poll until frontend is ready (up to 60 seconds — Next.js can take a while on first compile)
       const frontendStart = Date.now();
       while (Date.now() - frontendStart < 60000) {
         await new Promise((r) => setTimeout(r, 1000));
         isFrontendReady = await checkFrontendReady();
         if (isFrontendReady) {
+          updateSplashStep("frontend", "done", "Frontend UI ready ✓");
           updateSplashStatus("Frontend ready ✓  Launching app...");
           break;
         }
-        // Update splash with elapsed time
         const elapsed = Math.round((Date.now() - frontendStart) / 1000);
+        updateSplashStep("frontend", "active", `Compiling... (${elapsed}s)`);
         updateSplashStatus(`Starting Frontend UI... (${elapsed}s)`);
       }
+    } else {
+      updateSplashStep("frontend", "done", "Frontend UI already running ✓");
     }
   } else {
+    updateSplashStep("frontend", "done", "Cloud frontend active ✓");
     updateSplashStatus("Launching DataKarkhana Engine...");
   }
 
+  // ── Step 4: Launch ────────────────────────────────────
+  updateSplashStep("launch", "active", "Opening application window...");
+  updateSplashStatus("Launching application window...");
+
   // Small delay to ensure Next.js is fully hydrated
   await new Promise((r) => setTimeout(r, 500));
+
+  updateSplashStep("launch", "done", "All systems go!");
+  await new Promise((r) => setTimeout(r, 300));
 
   createMainWindow();
 }
