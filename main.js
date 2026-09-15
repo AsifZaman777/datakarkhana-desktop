@@ -175,10 +175,35 @@ async function startPythonBackend(onStatus) {
     : ["-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", String(BACKEND_PORT)];
 
   try {
+    // ── macOS PATH fix ──────────────────────────────────────────────────────
+    // Electron GUI apps on macOS inherit a stripped PATH (/usr/bin:/bin) that
+    // resolves to Apple's old system Python 3.9 stub, NOT the user's installed
+    // Python 3.13 (Homebrew, python.org, pyenv, etc.) which has uvicorn/fastapi.
+    // We explicitly prepend all known macOS Python binary directories so the
+    // correct interpreter is found before the system stub.
+    const macExtraPaths = process.platform !== "win32" ? [
+      "/opt/homebrew/bin",                                        // Homebrew (Apple Silicon)
+      "/usr/local/bin",                                           // Homebrew (Intel) / python.org
+      "/Library/Frameworks/Python.framework/Versions/3.13/bin",  // python.org 3.13
+      "/Library/Frameworks/Python.framework/Versions/3.12/bin",  // python.org 3.12
+      "/Library/Frameworks/Python.framework/Versions/3.11/bin",  // python.org 3.11
+      "/Library/Frameworks/Python.framework/Versions/3.10/bin",  // python.org 3.10
+      path.join(process.env.HOME || "", ".pyenv", "shims"),      // pyenv shims
+      path.join(process.env.HOME || "", ".pyenv", "bin"),        // pyenv
+      path.join(process.env.HOME || "", ".local", "bin"),        // pip --user installs
+    ] : [];
+    const augmentedPath = [...macExtraPaths, process.env.PATH || ""].join(":");
+
     console.log(`[ELECTRON] Launching backend: ${spawnCmd} ${spawnArgs.join(" ")} (cwd: ${backendDir})`);
+    console.log(`[ELECTRON] Effective PATH: ${augmentedPath.substring(0, 200)}...`);
     pythonProcess = spawn(spawnCmd, spawnArgs, {
       cwd: backendDir,
-      env: { ...process.env, PYTHONUNBUFFERED: "1", DATAKARKHANA_DATA_DIR: appDataDir },
+      env: {
+        ...process.env,
+        PATH: augmentedPath,
+        PYTHONUNBUFFERED: "1",
+        DATAKARKHANA_DATA_DIR: appDataDir,
+      },
       stdio: ["ignore", "pipe", "pipe"],
       windowsHide: true,
       shell: false, // CRITICAL: false prevents Windows cmd.exe from breaking paths with spaces
@@ -746,11 +771,38 @@ ipcMain.handle("backend:status", async () => {
   });
 });
 
+/**
+ * Polls /api/health every 2 s until it responds or maxWaitMs elapses.
+ * Returns true if the server came up, false on timeout.
+ */
+async function waitForBackendReady(maxWaitMs = 40000) {
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    const healthy = await checkBackendHealth();
+    if (healthy) return true;
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  return false;
+}
+
 ipcMain.handle("backend:restart", async () => {
-  console.log("[ELECTRON] Manual backend restart triggered");
+  console.log("[ELECTRON] Manual backend restart triggered — killing orphan on port", BACKEND_PORT);
+  // Kill any existing managed process first
+  if (pythonProcess) {
+    try { pythonProcess.kill("SIGKILL"); } catch { /* ignore */ }
+    pythonProcess = null;
+    await new Promise((r) => setTimeout(r, 800)); // let OS reclaim the port
+  }
   killOrphanOnPort(BACKEND_PORT);
-  const started = await startPythonBackend();
-  return { success: started };
+  await new Promise((r) => setTimeout(r, 500)); // small settle delay
+
+  const spawned = await startPythonBackend();
+  if (!spawned) return { success: false, reason: "spawn_failed" };
+
+  // Wait until the server is actually accepting HTTP requests
+  const ready = await waitForBackendReady(40000);
+  console.log(`[ELECTRON] Backend restart ${ready ? "succeeded" : "timed out (40 s)"}`);
+  return { success: ready };
 });
 
 ipcMain.handle("license:status", async () => {

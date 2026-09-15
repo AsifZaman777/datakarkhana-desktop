@@ -155,13 +155,27 @@ function findSystemPython(backendDir, appDataDir) {
     }
   } else {
     // 4. Check macOS / Linux common paths
+    // IMPORTANT: Check absolute paths BEFORE bare "python3" because on macOS,
+    // Electron GUI apps inherit a stripped PATH that resolves "python3" to
+    // Apple's system stub at /usr/bin/python3 (Python 3.9, no pip packages).
+    // The user's real Python (with uvicorn/fastapi/selenium) is typically at
+    // one of the absolute paths below.
+    const home = process.env.HOME || "";
     const unixCandidates = [
-      "python3",
-      "/opt/homebrew/bin/python3",
-      "/usr/local/bin/python3",
+      "/opt/homebrew/bin/python3",                                        // Homebrew (Apple Silicon M1/M2/M3)
+      "/usr/local/bin/python3",                                           // Homebrew (Intel Mac) / python.org
+      "/Library/Frameworks/Python.framework/Versions/3.13/bin/python3",  // python.org 3.13
+      "/Library/Frameworks/Python.framework/Versions/3.12/bin/python3",  // python.org 3.12
+      "/Library/Frameworks/Python.framework/Versions/3.11/bin/python3",  // python.org 3.11
+      "/Library/Frameworks/Python.framework/Versions/3.10/bin/python3",  // python.org 3.10
       "/Library/Frameworks/Python.framework/Versions/Current/bin/python3",
-      path.join(process.env.HOME || "", ".pyenv", "shims", "python3"),
-      "/usr/bin/python3",
+      path.join(home, ".pyenv", "shims", "python3"),                     // pyenv
+      path.join(home, ".pyenv", "versions", "3.13.0", "bin", "python3"),
+      path.join(home, ".pyenv", "versions", "3.12.0", "bin", "python3"),
+      path.join(home, ".pyenv", "versions", "3.11.0", "bin", "python3"),
+      path.join(home, ".local", "bin", "python3"),                       // pip --user
+      "python3",                                                          // fallback (bare command, may hit system Python)
+      "/usr/bin/python3",                                                 // Apple system Python 3.9 (last resort)
       "python",
     ];
 
