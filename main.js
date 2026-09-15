@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, shell, Menu, MenuItem } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const { spawn, execSync } = require("child_process");
@@ -421,6 +421,105 @@ function createMainWindow() {
     return { action: "allow" };
   });
 
+  // DevTools inspection and state management
+  mainWindow.webContents.on("devtools-opened", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("devtools:state-changed", true);
+    }
+  });
+
+  mainWindow.webContents.on("devtools-closed", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("devtools:state-changed", false);
+    }
+  });
+
+  // Enable Right-Click Inspect Element & Context Menu
+  mainWindow.webContents.on("context-menu", (event, params) => {
+    const menu = new Menu();
+
+    // Inspect Element option
+    menu.append(
+      new MenuItem({
+        label: "Inspect Element",
+        click: () => {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.inspectElement(params.x, params.y);
+          if (!mainWindow.webContents.isDevToolsOpened()) {
+            mainWindow.webContents.openDevTools();
+          }
+        },
+      })
+    );
+
+    menu.append(
+      new MenuItem({
+        label: mainWindow.webContents.isDevToolsOpened() ? "Close Developer Tools" : "Open Developer Tools",
+        accelerator: process.platform === "darwin" ? "Alt+Command+I" : "Ctrl+Shift+I",
+        click: () => {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.toggleDevTools();
+        },
+      })
+    );
+
+    menu.append(new MenuItem({ type: "separator" }));
+
+    menu.append(
+      new MenuItem({
+        label: "Reload Window",
+        accelerator: "CmdOrCtrl+R",
+        click: () => {
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.reload();
+        },
+      })
+    );
+
+    if (params.isEditable) {
+      menu.append(new MenuItem({ type: "separator" }));
+      menu.append(new MenuItem({ role: "cut" }));
+      menu.append(new MenuItem({ role: "copy" }));
+      menu.append(new MenuItem({ role: "paste" }));
+      menu.append(new MenuItem({ role: "selectAll" }));
+    } else if (params.selectionText && params.selectionText.trim().length > 0) {
+      menu.append(new MenuItem({ type: "separator" }));
+      menu.append(new MenuItem({ role: "copy" }));
+    }
+
+    menu.popup({ window: mainWindow, x: params.x, y: params.y });
+  });
+
+  // Keyboard shortcuts for Inspect and Developer Tools (F12, Cmd+Option+I, Ctrl+Shift+I)
+  mainWindow.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+
+    // F12 key
+    if (input.key === "F12") {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+      return;
+    }
+
+    // Cmd+Alt+I (macOS) or Ctrl+Shift+I (Windows/Linux)
+    const isMacInspect = input.meta && input.alt && input.key.toLowerCase() === "i";
+    const isWinInspect = input.control && input.shift && input.key.toLowerCase() === "i";
+    if (isMacInspect || isWinInspect) {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+      return;
+    }
+
+    // Cmd+R (macOS) or Ctrl+R (Windows/Linux) reload
+    const isMacReload = input.meta && input.key.toLowerCase() === "r";
+    const isWinReload = input.control && input.key.toLowerCase() === "r";
+    if (isMacReload || isWinReload) {
+      mainWindow.webContents.reload();
+      event.preventDefault();
+      return;
+    }
+  });
+
   mainWindow.once("ready-to-show", () => {
     if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
@@ -545,6 +644,63 @@ ipcMain.handle("license:activate", async (_, licenseKey) => {
     req.write(postData);
     req.end();
   });
+});
+
+let isDebugMode = false;
+
+ipcMain.handle("app:toggleDevTools", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.toggleDevTools();
+    const isOpen = mainWindow.webContents.isDevToolsOpened();
+    isDebugMode = isOpen;
+    return isOpen;
+  }
+  return false;
+});
+
+ipcMain.handle("app:openDevTools", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.openDevTools();
+    isDebugMode = true;
+    return true;
+  }
+  return false;
+});
+
+ipcMain.handle("app:closeDevTools", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.closeDevTools();
+    isDebugMode = false;
+    return false;
+  }
+  return false;
+});
+
+ipcMain.handle("app:isDevToolsOpened", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow.webContents.isDevToolsOpened();
+  }
+  return false;
+});
+
+ipcMain.handle("app:setDebugMode", (_, enabled) => {
+  isDebugMode = Boolean(enabled);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (isDebugMode) {
+      mainWindow.webContents.openDevTools();
+    } else {
+      mainWindow.webContents.closeDevTools();
+    }
+    return mainWindow.webContents.isDevToolsOpened();
+  }
+  return isDebugMode;
+});
+
+ipcMain.handle("app:getDebugMode", () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    return mainWindow.webContents.isDevToolsOpened() || isDebugMode;
+  }
+  return isDebugMode;
 });
 
 ipcMain.on("app:quit", () => {
