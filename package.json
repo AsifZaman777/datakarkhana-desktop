@@ -1,6 +1,6 @@
 {
   "name": "datakarkhana",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "description": "DataKarkhana / MarketingOstad Desktop Application with Local Selenium Automation",
   "main": "main.js",
   "scripts": {
