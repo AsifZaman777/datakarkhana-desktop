@@ -4,6 +4,27 @@ const fs = require("fs");
 const { spawn, execSync } = require("child_process");
 const http = require("http");
 const { ensureBackendEnvironment } = require("./setup-dependencies");
+const { autoUpdater } = require("electron-updater");
+
+// Configure autoUpdater
+autoUpdater.autoDownload = true;
+autoUpdater.autoInstallOnAppQuit = true;
+
+function setupAutoUpdater() {
+  if (!app.isPackaged) return;
+
+  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
+    console.log("[AUTO-UPDATER] Check error (ignored):", err.message);
+  });
+
+  autoUpdater.on("update-available", (info) => {
+    console.log(`[AUTO-UPDATER] Update available: v${info.version}`);
+  });
+
+  autoUpdater.on("update-downloaded", (info) => {
+    console.log(`[AUTO-UPDATER] Update downloaded: v${info.version}`);
+  });
+}
 
 let mainWindow = null;
 let splashWindow = null;
@@ -631,6 +652,7 @@ function createMainWindow() {
       splashWindow = null;
     }
     mainWindow.show();
+    setupAutoUpdater();
   });
 
   mainWindow.on("closed", () => {
