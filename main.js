@@ -11,18 +11,93 @@ autoUpdater.autoDownload = true;
 autoUpdater.autoInstallOnAppQuit = true;
 
 function setupAutoUpdater() {
-  if (!app.isPackaged) return;
+  if (!app.isPackaged) {
+    console.log("[AUTO-UPDATER] Development mode detected — auto-updates disabled.");
+    return;
+  }
 
-  autoUpdater.checkForUpdatesAndNotify().catch((err) => {
-    console.log("[AUTO-UPDATER] Check error (ignored):", err.message);
+  console.log(`[AUTO-UPDATER] Initializing update watcher for DataKarkhana Desktop v${app.getVersion()}...`);
+
+  // Check on startup after 4 seconds
+  setTimeout(() => {
+    console.log("[AUTO-UPDATER] Performing initial check for GitHub releases...");
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.log("[AUTO-UPDATER] Startup update check error (safe to ignore):", err.message);
+    });
+  }, 4000);
+
+  // Periodic background check every 2 hours
+  setInterval(() => {
+    console.log("[AUTO-UPDATER] Performing periodic check for GitHub releases...");
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.log("[AUTO-UPDATER] Periodic update check error (safe to ignore):", err.message);
+    });
+  }, 2 * 60 * 60 * 1000);
+
+  autoUpdater.on("checking-for-update", () => {
+    console.log("[AUTO-UPDATER] Checking GitHub releases repository for new updates...");
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("app:update-checking");
+    }
   });
 
   autoUpdater.on("update-available", (info) => {
-    console.log(`[AUTO-UPDATER] Update available: v${info.version}`);
+    console.log(`[AUTO-UPDATER] New update available: v${info.version}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("app:update-available", info);
+      dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Update Available — DataKarkhana Desktop",
+        message: `A new version (v${info.version}) of DataKarkhana Desktop is available!`,
+        detail: `Current version: v${app.getVersion()}\nLatest version: v${info.version}\n\nThe update is downloading automatically in the background. You can continue using DataKarkhana uninterrupted. Once the download finishes, you will be prompted to restart and apply it.`,
+        buttons: ["OK, Download in Background"],
+        defaultId: 0,
+      });
+    }
+  });
+
+  autoUpdater.on("update-not-available", (info) => {
+    console.log(`[AUTO-UPDATER] Application is up to date (current version: v${app.getVersion()})`);
+  });
+
+  autoUpdater.on("download-progress", (progressObj) => {
+    const percent = Math.round(progressObj.percent || 0);
+    const speed = Math.round((progressObj.bytesPerSecond || 0) / 1024);
+    console.log(`[AUTO-UPDATER] Downloading update: ${percent}% (${speed} KB/s)`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setProgressBar(progressObj.percent / 100);
+      mainWindow.webContents.send("app:update-download-progress", progressObj);
+    }
   });
 
   autoUpdater.on("update-downloaded", (info) => {
-    console.log(`[AUTO-UPDATER] Update downloaded: v${info.version}`);
+    console.log(`[AUTO-UPDATER] Update downloaded successfully: v${info.version}`);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setProgressBar(-1);
+      mainWindow.webContents.send("app:update-downloaded", info);
+
+      dialog.showMessageBox(mainWindow, {
+        type: "info",
+        title: "Update Ready to Install",
+        message: `DataKarkhana Desktop v${info.version} is ready to install!`,
+        detail: "The new update has been downloaded. Would you like to restart DataKarkhana now to apply it immediately, or install it automatically when you close the app?",
+        buttons: ["Restart & Install Now", "Install Later (On Exit)"],
+        defaultId: 0,
+        cancelId: 1,
+      }).then((result) => {
+        if (result.response === 0) {
+          // Restart immediately and apply update
+          setImmediate(() => autoUpdater.quitAndInstall(false, true));
+        }
+      });
+    }
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.log("[AUTO-UPDATER] Update error:", err == null ? "unknown" : (err.stack || err).toString());
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setProgressBar(-1);
+    }
   });
 }
 
@@ -311,10 +386,11 @@ function startFrontendDevServer() {
 
 function createSplashWindow() {
   const appIcon = path.join(__dirname, "icon.png");
+  const appVersion = app.getVersion();
 
   splashWindow = new BrowserWindow({
-    width: 460,
-    height: 420,
+    width: 480,
+    height: 430,
     frame: false,
     resizable: false,
     alwaysOnTop: true,
@@ -363,16 +439,35 @@ function createSplashWindow() {
           margin-bottom: 14px;
         }
         .logo-box svg { width: 30px; height: 30px; fill: #fff; }
+        .title-row {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 8px;
+        }
         h1 {
-          font-size: 17px;
+          font-size: 16px;
           font-weight: 800;
           letter-spacing: 0.6px;
           color: #f8fafc;
         }
+        .version-badge {
+          display: inline-flex;
+          align-items: center;
+          font-size: 11px;
+          font-weight: 700;
+          padding: 2px 7px;
+          border-radius: 6px;
+          background: rgba(6,182,212,0.18);
+          color: #38bdf8;
+          border: 1px solid rgba(6,182,212,0.35);
+          letter-spacing: 0.5px;
+          font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        }
         .subtitle {
           font-size: 10px;
           color: #64748b;
-          margin-top: 3px;
+          margin-top: 4px;
           letter-spacing: 0.3px;
         }
         /* ── Checklist ── */
@@ -502,8 +597,11 @@ function createSplashWindow() {
       <div class="logo-box">
         <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
       </div>
-      <h1>DATAKARKHANA DESKTOP</h1>
-      <div class="subtitle">Local Automation &amp; Lead Generation Engine</div>
+      <div class="title-row">
+        <h1>DATAKARKHANA DESKTOP</h1>
+        <span class="version-badge">v${appVersion}</span>
+      </div>
+      <div class="subtitle">Local Automation &amp; Lead Generation Engine • Release v${appVersion}</div>
 
       <div class="checklist">
         <div class="step" id="step-python">
@@ -600,7 +698,7 @@ function createMainWindow() {
     height: 900,
     minWidth: 1080,
     minHeight: 700,
-    title: "DataKarkhana Desktop",
+    title: `DataKarkhana Desktop v${app.getVersion()}`,
     backgroundColor: "#070b14",
     icon: appIcon,
     show: false,
@@ -611,6 +709,17 @@ function createMainWindow() {
       webSecurity: false,
       allowRunningInsecureContent: true,
     },
+  });
+
+  // Ensure window title bar always prominently displays application name and release version
+  mainWindow.on("page-title-updated", (event, title) => {
+    event.preventDefault();
+    const ver = app.getVersion();
+    if (title && !title.includes(`v${ver}`)) {
+      mainWindow.setTitle(`${title} — DataKarkhana Desktop v${ver}`);
+    } else {
+      mainWindow.setTitle(`DataKarkhana Desktop v${ver}`);
+    }
   });
 
   mainWindow.loadURL(FRONTEND_DEV_URL);
@@ -755,6 +864,24 @@ async function initApp() {
 // ── IPC Handlers ──────────────────────────────────────────────────────────
 
 ipcMain.handle("app:version", () => app.getVersion());
+
+ipcMain.handle("app:check-updates", async () => {
+  if (!app.isPackaged) {
+    return { status: "dev", message: "Auto-updater is disabled in development mode." };
+  }
+  try {
+    const res = await autoUpdater.checkForUpdates();
+    return {
+      status: "ok",
+      currentVersion: app.getVersion(),
+      updateAvailable: Boolean(res && res.updateInfo && res.updateInfo.version !== app.getVersion()),
+      version: res?.updateInfo?.version,
+      releaseNotes: res?.updateInfo?.releaseNotes,
+    };
+  } catch (err) {
+    return { status: "error", message: err.message };
+  }
+});
 
 ipcMain.handle("backend:status", async () => {
   return new Promise((resolve) => {

@@ -1,6 +1,6 @@
 {
   "name": "datakarkhana",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "description": "DataKarkhana / MarketingOstad Desktop Application with Local Selenium Automation",
   "main": "main.js",
   "scripts": {
@@ -89,6 +89,14 @@
         "nsis",
         "portable"
       ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "DataKarkhana Desktop",
+      "differentialPackage": true
     },
     "linux": {
       "icon": "build/icon.png",

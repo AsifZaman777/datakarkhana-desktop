@@ -37,17 +37,17 @@ In `datakarkhana-desktop/package.json`:
 ```json
 {
   "name": "datakarkhana",
-  "version": "2.0.3",  // <-- Increase version (e.g. 2.0.2 -> 2.0.3)
+  "version": "2.1.2",  // <-- Current Release v2.1.2
   ...
 }
 ```
 > [!IMPORTANT]
-> Always increase the version number before building. If the version number is not incremented, existing client apps will ignore the update.
+> Always increase the version number before building. If the version number is higher than the currently installed version, existing client desktop apps will automatically detect the new update from GitHub Releases, download the update in the background, and prompt the user to restart.
 
 Commit and push this version bump to GitHub:
 ```bash
-git add package.json main.js
-git commit -m "chore: bump version to 2.0.3"
+git add package.json main.js preload.js
+git commit -m "chore: release version 2.1.2 with auto-updater & version badges"
 git push origin master
 ```
 
