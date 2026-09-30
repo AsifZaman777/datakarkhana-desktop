@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const { spawn, execSync } = require("child_process");
 const http = require("http");
+const https = require("https");
 const { ensureBackendEnvironment } = require("./setup-dependencies");
 const { autoUpdater } = require("electron-updater");
 
@@ -107,13 +108,16 @@ let pythonProcess = null;
 let frontendProcess = null;
 const BACKEND_PORT = 8000;
 const FRONTEND_PORT = 3000;
+const CLOUD_FRONTEND_URL = "https://datakarkhana-frontend.vercel.app";
+const LOCAL_FRONTEND_URL = `http://localhost:${FRONTEND_PORT}`;
 const BACKEND_HEALTH_URL = `http://127.0.0.1:${BACKEND_PORT}/api/health`;
-const FRONTEND_BASE_URL = (
+
+let FRONTEND_BASE_URL = (
   process.env.FRONTEND_URL ||
-  (app.isPackaged ? "https://datakarkhana-frontend.vercel.app" : `http://localhost:${FRONTEND_PORT}`)
+  (app.isPackaged ? CLOUD_FRONTEND_URL : LOCAL_FRONTEND_URL)
 ).replace(/\/$/, "");
-const FRONTEND_AUTH_URL = `${FRONTEND_BASE_URL}/auth`;
-const FRONTEND_DEV_URL = FRONTEND_AUTH_URL;
+let FRONTEND_AUTH_URL = `${FRONTEND_BASE_URL}/auth`;
+let FRONTEND_DEV_URL = FRONTEND_AUTH_URL;
 
 // Disable hardware acceleration issues & allow communication with local 127.0.0.1 backend
 app.commandLine.appendSwitch("disable-site-isolation-trials");
@@ -146,16 +150,23 @@ function checkBackendHealth() {
   });
 }
 
-function checkFrontendReady() {
+function checkFrontendReady(targetUrl) {
+  const urlToCheck = targetUrl || FRONTEND_BASE_URL;
   return new Promise((resolve) => {
-    const req = http.get(FRONTEND_BASE_URL, (res) => {
-      resolve(res.statusCode >= 200 && res.statusCode < 500);
-    });
-    req.on("error", () => resolve(false));
-    req.setTimeout(2000, () => {
-      req.destroy();
+    try {
+      const parsed = new URL(urlToCheck);
+      const client = parsed.protocol === "https:" ? https : http;
+      const req = client.get(urlToCheck, (res) => {
+        resolve(res.statusCode >= 200 && res.statusCode < 500);
+      });
+      req.on("error", () => resolve(false));
+      req.setTimeout(2500, () => {
+        req.destroy();
+        resolve(false);
+      });
+    } catch {
       resolve(false);
-    });
+    }
   });
 }
 
@@ -818,13 +829,32 @@ function createMainWindow() {
     return { action: "allow" };
   });
 
-  mainWindow.once("ready-to-show", () => {
+  let splashClosed = false;
+  function safeCloseSplash() {
+    if (splashClosed) return;
+    splashClosed = true;
     if (splashWindow && !splashWindow.isDestroyed()) {
       splashWindow.close();
       splashWindow = null;
     }
-    mainWindow.show();
-    setupAutoUpdater();
+    if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) {
+      mainWindow.show();
+      setupAutoUpdater();
+    }
+  }
+
+  // Safety fallback: ensure splash is never permanently stuck if network/rendering stalls
+  const splashSafetyTimer = setTimeout(safeCloseSplash, 12000);
+
+  mainWindow.once("ready-to-show", () => {
+    clearTimeout(splashSafetyTimer);
+    safeCloseSplash();
+  });
+
+  mainWindow.webContents.on("did-fail-load", (event, errorCode, errorDescription, validatedURL) => {
+    console.warn(`[ELECTRON] Failed to load ${validatedURL}: ${errorDescription} (${errorCode})`);
+    clearTimeout(splashSafetyTimer);
+    safeCloseSplash();
   });
 
   mainWindow.on("closed", () => {
@@ -909,19 +939,31 @@ async function initApp() {
   updateSplashStatus("Backend ready ✓  Launching application...");
 
   // ── Step 3: Frontend UI ───────────────────────────────
-  if (!app.isPackaged) {
-    updateSplashStep("frontend", "active", "Checking Next.js dev server...");
-    let isFrontendReady = await checkFrontendReady();
-    if (!isFrontendReady) {
-      startFrontendDevServer();
-      updateSplashStep("frontend", "active", "Compiling frontend UI...");
+  updateSplashStep("frontend", "active", "Detecting frontend UI...");
+  updateSplashStatus("Connecting to frontend UI...");
+
+  let resolvedFrontendUrl = process.env.FRONTEND_URL ? process.env.FRONTEND_URL.replace(/\/$/, "") : null;
+
+  if (!resolvedFrontendUrl) {
+    // 1. First probe if local Next.js frontend is already active on localhost:3000
+    const isLocalRunning = await checkFrontendReady(LOCAL_FRONTEND_URL);
+
+    if (isLocalRunning) {
+      resolvedFrontendUrl = LOCAL_FRONTEND_URL;
+      console.log(`[ELECTRON] Local frontend detected at ${LOCAL_FRONTEND_URL}`);
+      updateSplashStep("frontend", "done", "Connected to local UI (localhost:3000) ✓");
+    } else if (!app.isPackaged) {
+      // 2. In unpackaged dev mode, start local dev server if not running
+      updateSplashStep("frontend", "active", "Starting local Next.js dev server...");
       updateSplashStatus("Starting Frontend UI...");
+      startFrontendDevServer();
 
       const frontendStart = Date.now();
+      let isReady = false;
       while (Date.now() - frontendStart < 60000) {
         await new Promise((r) => setTimeout(r, 1000));
-        isFrontendReady = await checkFrontendReady();
-        if (isFrontendReady) {
+        isReady = await checkFrontendReady(LOCAL_FRONTEND_URL);
+        if (isReady) {
           updateSplashStep("frontend", "done", "Frontend UI ready ✓");
           updateSplashStatus("Frontend ready ✓  Launching app...");
           break;
@@ -930,13 +972,22 @@ async function initApp() {
         updateSplashStep("frontend", "active", `Compiling... (${elapsed}s)`);
         updateSplashStatus(`Starting Frontend UI... (${elapsed}s)`);
       }
+      resolvedFrontendUrl = LOCAL_FRONTEND_URL;
     } else {
-      updateSplashStep("frontend", "done", "Frontend UI already running ✓");
+      // 3. In packaged / win-unpacked mode: local server not active, fall back to cloud Vercel frontend
+      console.log(`[ELECTRON] Local frontend not running on ${FRONTEND_PORT}, falling back to cloud: ${CLOUD_FRONTEND_URL}`);
+      updateSplashStep("frontend", "active", "Connecting to cloud frontend...");
+      const isCloudReady = await checkFrontendReady(CLOUD_FRONTEND_URL);
+      resolvedFrontendUrl = CLOUD_FRONTEND_URL;
+      updateSplashStep("frontend", "done", isCloudReady ? "Cloud frontend active ✓" : "Cloud frontend reachable ✓");
     }
   } else {
-    updateSplashStep("frontend", "done", "Cloud frontend active ✓");
-    updateSplashStatus("Launching DataKarkhana Engine...");
+    updateSplashStep("frontend", "done", `Custom frontend (${resolvedFrontendUrl}) ✓`);
   }
+
+  FRONTEND_BASE_URL = resolvedFrontendUrl;
+  FRONTEND_AUTH_URL = `${FRONTEND_BASE_URL}/auth`;
+  FRONTEND_DEV_URL = FRONTEND_AUTH_URL;
 
   // ── Step 4: Launch ────────────────────────────────────
   updateSplashStep("launch", "active", "Opening application window...");
