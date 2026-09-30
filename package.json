@@ -1,6 +1,6 @@
 {
   "name": "datakhuji",
-  "version": "2.1.3",
+  "version": "2.1.4",
   "description": "DataKarkhana / MarketingOstad Desktop Application with Local Selenium Automation",
   "main": "main.js",
   "scripts": {
