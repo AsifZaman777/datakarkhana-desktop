@@ -228,16 +228,82 @@ function getBackendDir() {
 
 let lastBackendStderrLines = [];
 
-async function startPythonBackend(onStatus) {
-  // Check if backend is already running and healthy
-  const alreadyHealthy = await checkBackendHealth();
-  if (alreadyHealthy) {
-    console.log(`[ELECTRON] Backend is already running and healthy on port ${BACKEND_PORT}`);
-    if (onStatus) onStatus("Local backend engine active ✓", 100);
-    return true;
+// ── Backend Logging ───────────────────────────────────────────────────────────
+// Writes timestamped lines into  <userData>/logs/backend-YYYY-MM-DD.log
+// A new file is created for each calendar day automatically.
+
+let _currentLogStream = null;
+let _currentLogDate   = null;   // "YYYY-MM-DD" of the open stream
+
+function _getDateTag() {
+  return new Date().toISOString().slice(0, 10); // "2026-10-01"
+}
+
+function _getTimestamp() {
+  return new Date().toISOString();              // "2026-10-01T18:05:23.456Z"
+}
+
+/**
+ * Returns a writable stream for today's backend log file.
+ * Opens a new file whenever the calendar date changes (daily rotation).
+ */
+function getBackendLogStream(appDataDir) {
+  const today = _getDateTag();
+
+  // Rotate if the date has changed since we opened the stream
+  if (_currentLogStream && _currentLogDate !== today) {
+    try { _currentLogStream.end(); } catch { /* ignore */ }
+    _currentLogStream = null;
+    _currentLogDate   = null;
   }
 
+  if (_currentLogStream) return _currentLogStream;
+
+  try {
+    const logsDir = path.join(appDataDir, "logs");
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+
+    const logFile = path.join(logsDir, `backend-${today}.log`);
+    _currentLogStream = fs.createWriteStream(logFile, { flags: "a", encoding: "utf8" });
+    _currentLogDate   = today;
+
+    // Write a session-start banner so each app launch is clearly visible in the file
+    const banner = `\n${"-".repeat(80)}\n[${_getTimestamp()}] [SESSION START] DataKarkhana Desktop Backend\n${"-".repeat(80)}\n`;
+    _currentLogStream.write(banner);
+  } catch (err) {
+    console.warn("[LOGGER] Could not open backend log file:", err.message);
+    _currentLogStream = null;
+  }
+
+  return _currentLogStream;
+}
+
+/** Write a single log line with timestamp and level prefix. */
+function writeBackendLog(appDataDir, level, text) {
+  const stream = getBackendLogStream(appDataDir);
+  if (!stream) return;
+  const lines = text.replace(/\r/g, "").split("\n");
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    stream.write(`[${_getTimestamp()}] [${level}] ${line}\n`);
+  }
+}
+
+async function startPythonBackend(onStatus) {
+  // If WE already own a running backend process, skip re-spawning
+  if (pythonProcess) {
+    const alreadyHealthy = await checkBackendHealth();
+    if (alreadyHealthy) {
+      console.log(`[ELECTRON] Backend is already running and healthy on port ${BACKEND_PORT}`);
+      if (onStatus) onStatus("Local backend engine active ✓", 100);
+      return true;
+    }
+  }
+
+  // Always kill any orphan from a previous session before starting fresh
+  console.log(`[ELECTRON] Clearing port ${BACKEND_PORT} before startup...`);
   killOrphanOnPort(BACKEND_PORT);
+  await new Promise((r) => setTimeout(r, 600)); // let OS release the port
 
   const backendDir = getBackendDir();
   const appDataDir = app.getPath("userData");
@@ -256,13 +322,9 @@ async function startPythonBackend(onStatus) {
   }
 
   lastBackendStderrLines = [];
-  const logFile = path.join(appDataDir, "backend.log");
-  let logStream = null;
-  try {
-    logStream = fs.createWriteStream(logFile, { flags: "a" });
-  } catch {
-    // Ignore log stream error
-  }
+  // Open (or rotate to) today's dated log file under <userData>/logs/
+  const logStream = getBackendLogStream(appDataDir);
+  const logFilePath = path.join(appDataDir, "logs", `backend-${_getDateTag()}.log`);
 
   const isBinary = backendEnv.type === "binary";
   const spawnCmd = backendEnv.command;
@@ -323,19 +385,20 @@ async function startPythonBackend(onStatus) {
   pythonProcess.stdout.on("data", (data) => {
     const text = data.toString();
     console.log(`[BACKEND STDOUT] ${text.trim()}`);
-    if (logStream) logStream.write(text);
+    writeBackendLog(appDataDir, "STDOUT", text);
   });
 
   pythonProcess.stderr.on("data", (data) => {
     const text = data.toString();
     console.error(`[BACKEND STDERR] ${text.trim()}`);
-    if (logStream) logStream.write(text);
+    writeBackendLog(appDataDir, "STDERR", text);
     lastBackendStderrLines.push(text.trim());
     if (lastBackendStderrLines.length > 20) lastBackendStderrLines.shift();
   });
 
   pythonProcess.on("close", (code) => {
     console.log(`[ELECTRON] Python backend process exited with code ${code}`);
+    writeBackendLog(appDataDir, "ELECTRON", `Python backend process exited with code ${code}`);
     if (code !== 0 && code !== null) {
       console.error("[ELECTRON] Last backend error messages:", lastBackendStderrLines.join("\n"));
     }
@@ -797,7 +860,7 @@ async function initApp() {
 
     const backendStart = Date.now();
     let backendTerminated = false;
-    const logFilePath = path.join(appDataDir, "backend.log");
+    const logFilePath = path.join(appDataDir, "logs", `backend-${_getDateTag()}.log`);
 
     while (Date.now() - backendStart < 45000) {
       await new Promise((r) => setTimeout(r, 800));
@@ -979,6 +1042,19 @@ ipcMain.handle("backend:restart", async () => {
   const ready = await waitForBackendReady(40000);
   console.log(`[ELECTRON] Backend restart ${ready ? "succeeded" : "timed out (40 s)"}`);
   return { success: ready };
+});
+
+ipcMain.handle("backend:open-logs", async () => {
+  const appDataDir = app.getPath("userData");
+  const logsDir = path.join(appDataDir, "logs");
+  try {
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+    const { shell } = require("electron");
+    await shell.openPath(logsDir);
+    return { success: true, path: logsDir };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle("license:status", async () => {
