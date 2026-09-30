@@ -796,10 +796,20 @@ async function initApp() {
     updateSplashStatus("Starting local backend server...");
 
     const backendStart = Date.now();
+    let backendTerminated = false;
+    const logFilePath = path.join(appDataDir, "backend.log");
+
     while (Date.now() - backendStart < 45000) {
       await new Promise((r) => setTimeout(r, 800));
       isBackendHealthy = await checkBackendHealth();
       if (isBackendHealthy) break;
+
+      // Check if Python process died unexpectedly
+      if (!pythonProcess) {
+        backendTerminated = true;
+        break;
+      }
+
       const elapsed = Math.round((Date.now() - backendStart) / 1000);
       updateSplashStep("backend", "active", `Waiting for API server... (${elapsed}s)`);
       updateSplashStatus(`Starting local backend engine... (${elapsed}s)`);
@@ -808,7 +818,24 @@ async function initApp() {
     if (isBackendHealthy) {
       updateSplashStep("backend", "done", "API server is healthy ✓");
     } else {
-      updateSplashStep("backend", "error", "Backend did not respond in time");
+      updateSplashStep("backend", "error", backendTerminated ? "Backend process exited with error" : "Backend did not respond in time");
+      const recentErrors = lastBackendStderrLines.length > 0
+        ? lastBackendStderrLines.slice(-6).join("\n")
+        : "Python backend process terminated unexpectedly before port 8000 opened.";
+
+      const res = dialog.showMessageBoxSync(splashWindow || mainWindow, {
+        type: "error",
+        title: "Backend Server Startup Error",
+        message: "The local backend server failed to initialize.",
+        detail: `${recentErrors}\n\nFull log file saved at:\n${logFilePath}`,
+        buttons: ["Open Backend Log", "Exit"],
+        defaultId: 0,
+      });
+
+      if (res === 0) {
+        shell.openPath(logFilePath);
+      }
+      return;
     }
   } else {
     // Backend was already running
