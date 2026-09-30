@@ -204,7 +204,7 @@ function killOrphanOnPort(port) {
       for (const line of lines) {
         const parts = line.trim().split(/\s+/);
         const pid = parts[parts.length - 1];
-        if (pid && !isNaN(pid)) {
+        if (pid && !isNaN(pid) && Number(pid) > 0) {
           execSync(`taskkill /pid ${pid} /F`);
         }
       }
@@ -863,10 +863,12 @@ function createMainWindow() {
 }
 
 async function initApp() {
+  const appDataDir = app.getPath("userData");
   createSplashWindow();
 
-  // Give the splash window a moment to fully render before we start updating it
-  await new Promise((r) => setTimeout(r, 350));
+  try {
+    // Give the splash window a moment to fully render before we start updating it
+    await new Promise((r) => setTimeout(r, 350));
 
   // ── Step 1: Python Engine Setup ─────────────────────────
   updateSplashStep("python", "active", "Checking Python & dependencies...");
@@ -1000,6 +1002,15 @@ async function initApp() {
   await new Promise((r) => setTimeout(r, 300));
 
   createMainWindow();
+  } catch (err) {
+    console.error("[ELECTRON] Fatal error during initApp:", err);
+    updateSplashStatus(`Startup error: ${err.message}`);
+    updateSplashStep("launch", "error", err.message);
+    dialog.showErrorBox(
+      "Application Startup Error",
+      `An unexpected error occurred during application initialization:\n\n${err.stack || err.message}`
+    );
+  }
 }
 
 // ── IPC Handlers ──────────────────────────────────────────────────────────
