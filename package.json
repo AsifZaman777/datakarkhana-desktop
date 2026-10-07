@@ -46,6 +46,7 @@
       "main.js",
       "preload.js",
       "setup-dependencies.js",
+      "src/**/*",
       "package.json",
       "icon.*",
       "build/**/*",
