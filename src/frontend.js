@@ -67,6 +67,31 @@ function startFrontendDevServer() {
   const frontendDir = path.resolve(APP_ROOT, "..", "datakarkhana-frontend");
   const npmCmd = findNpmCommand();
 
+  // Clean up any stale Next.js dev lock or zombie next-server process before starting
+  try {
+    const fs = require("fs");
+    const lockFile = path.join(frontendDir, ".next", "dev", "lock");
+    if (fs.existsSync(lockFile)) {
+      if (process.platform === "win32") {
+        try {
+          execSync(
+            `powershell -NoProfile -Command "Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'node.exe' -and $_.CommandLine -match 'datakarkhana-frontend' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }"`,
+            { stdio: "ignore" }
+          );
+        } catch {
+          // Ignore
+        }
+      }
+      try {
+        fs.unlinkSync(lockFile);
+      } catch {
+        // Ignore if still locked
+      }
+    }
+  } catch {
+    // Ignore cleanup errors
+  }
+
   console.log(`[ELECTRON] Starting Next.js frontend from ${frontendDir}...`);
 
   try {
