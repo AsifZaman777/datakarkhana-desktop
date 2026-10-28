@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require("electron");
+const { contextBridge, ipcRenderer, webFrame } = require("electron");
 
 contextBridge.exposeInMainWorld("electronAPI", {
   isElectron: true,
@@ -9,5 +9,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   activateLicense: (key) => ipcRenderer.invoke("license:activate", key),
   getBackendStatus: () => ipcRenderer.invoke("backend:status"),
   restartBackend: () => ipcRenderer.invoke("backend:restart"),
-  quitApp: () => ipcRenderer.send("app:quit")
+  quitApp: () => ipcRenderer.send("app:quit"),
+  setZoomFactor: (factor) => webFrame.setZoomFactor(factor),
+  getZoomFactor: () => webFrame.getZoomFactor(),
 });
