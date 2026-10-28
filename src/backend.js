@@ -84,11 +84,20 @@ function killOrphanOnPort(port) {
     if (process.platform === "win32") {
       const out = execSync(`netstat -ano | findstr :${port}`).toString();
       const lines = out.trim().split("\n");
+      const killedPids = new Set();
       for (const line of lines) {
+        if (!line.toUpperCase().includes("LISTENING")) continue;
         const parts = line.trim().split(/\s+/);
+        const localAddr = parts[1] || "";
+        if (!localAddr.endsWith(`:${port}`)) continue;
         const pid = parts[parts.length - 1];
-        if (pid && !isNaN(pid) && Number(pid) > 0) {
-          execSync(`taskkill /pid ${pid} /F`);
+        if (pid && !isNaN(pid) && Number(pid) > 0 && Number(pid) !== process.pid && !killedPids.has(pid)) {
+          killedPids.add(pid);
+          try {
+            execSync(`taskkill /pid ${pid} /T /F`, { stdio: "ignore" });
+          } catch {
+            // Process may have already exited
+          }
         }
       }
     } else {
@@ -178,7 +187,7 @@ async function startPythonBackend(onStatus) {
             path.join(process.env.HOME || "", ".local", "bin"), // pip --user installs
           ]
         : [];
-    const augmentedPath = [...macExtraPaths, process.env.PATH || ""].join(":");
+    const augmentedPath = [...macExtraPaths, process.env.PATH || ""].filter(Boolean).join(path.delimiter);
 
     console.log(`[ELECTRON] Launching backend: ${spawnCmd} ${spawnArgs.join(" ")} (cwd: ${backendDir})`);
     console.log(`[ELECTRON] Effective PATH: ${augmentedPath.substring(0, 200)}...`);
@@ -188,6 +197,8 @@ async function startPythonBackend(onStatus) {
         ...process.env,
         PATH: augmentedPath,
         PYTHONUNBUFFERED: "1",
+        PYTHONIOENCODING: "utf-8",
+        PYTHONUTF8: "1",
         DATAKARKHANA_DATA_DIR: appDataDir,
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -265,7 +276,7 @@ function cleanupBackendProcess() {
     console.log("[ELECTRON] Terminating Python backend subprocess...");
     try {
       if (process.platform === "win32") {
-        execSync(`taskkill /pid ${pythonProcess.pid} /T /F`);
+        execSync(`taskkill /pid ${pythonProcess.pid} /T /F`, { stdio: "ignore" });
       } else {
         pythonProcess.kill("SIGTERM");
       }

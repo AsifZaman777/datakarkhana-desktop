@@ -53,6 +53,13 @@ function getFrontendDevUrl() {
  * and prevent site isolation / network blocks.
  */
 function applyChromeCommandLineSwitches() {
+  try {
+    const cacheDir = path.join(app.getPath("temp"), "datakarkhana-desktop-cache");
+    app.commandLine.appendSwitch("disk-cache-dir", cacheDir);
+  } catch {
+    // Fallback to default cache path
+  }
+  app.commandLine.appendSwitch("disable-gpu-shader-disk-cache");
   app.commandLine.appendSwitch("disable-site-isolation-trials");
   app.commandLine.appendSwitch("allow-running-insecure-content");
   app.commandLine.appendSwitch("disable-features", "BlockInsecurePrivateNetworkRequests");

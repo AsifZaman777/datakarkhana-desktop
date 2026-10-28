@@ -174,6 +174,14 @@ async function initApp() {
 
 app.on("before-quit", cleanupChildProcesses);
 app.on("will-quit", cleanupChildProcesses);
+process.on("SIGINT", () => {
+  cleanupChildProcesses();
+  process.exit(0);
+});
+process.on("SIGTERM", () => {
+  cleanupChildProcesses();
+  process.exit(0);
+});
 
 app.whenReady().then(initApp);
 
