@@ -27,9 +27,16 @@ const APP_ROOT = path.resolve(__dirname, "..");
 const ICON_PATH = path.join(APP_ROOT, "icon.png");
 const PRELOAD_PATH = path.join(APP_ROOT, "preload.js");
 
+let isPackaged = false;
+try {
+  isPackaged = app && app.isPackaged;
+} catch {
+  isPackaged = false;
+}
+
 let frontendBaseUrl = (
   process.env.FRONTEND_URL ||
-  (app.isPackaged ? CLOUD_FRONTEND_URL : LOCAL_FRONTEND_URL)
+  (isPackaged ? CLOUD_FRONTEND_URL : LOCAL_FRONTEND_URL)
 ).replace(/\/$/, "");
 
 function getFrontendBaseUrl() {

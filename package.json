@@ -9,7 +9,8 @@
     "pack": "electron-builder --dir",
     "build:mac": "electron-builder --mac",
     "build:win": "electron-builder --win --x64",
-    "build:linux": "electron-builder --linux"
+    "build:linux": "electron-builder --linux",
+    "test": "node --test tests/"
   },
   "keywords": [
     "desktop",
