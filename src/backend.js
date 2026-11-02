@@ -202,7 +202,7 @@ async function startPythonBackend(onStatus) {
         DATAKARKHANA_DATA_DIR: appDataDir,
       },
       stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
+      windowsHide: false,
       shell: false, // CRITICAL: false prevents Windows cmd.exe from breaking paths with spaces
     });
   } catch (err) {
